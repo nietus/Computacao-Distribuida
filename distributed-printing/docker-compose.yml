@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  print-server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: print-server
+    ports:
+      - "50051:50051"
+    networks:
+      - print-network
+
+  client-1:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: client-1
+    environment:
+      - CLIENT_ID=1
+      - SERVER_HOST=print-server
+      - SERVER_PORT=50051
+      - CLIENT_PORT=50052
+      - OTHER_CLIENTS=client-2:50053,client-3:50054
+    ports:
+      - "50052:50052"
+    networks:
+      - print-network
+    depends_on:
+      - print-server
+
+  client-2:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: client-2
+    environment:
+      - CLIENT_ID=2
+      - SERVER_HOST=print-server
+      - SERVER_PORT=50051
+      - CLIENT_PORT=50053
+      - OTHER_CLIENTS=client-1:50052,client-3:50054
+    ports:
+      - "50053:50053"
+    networks:
+      - print-network
+    depends_on:
+      - print-server
+
+  client-3:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: client-3
+    environment:
+      - CLIENT_ID=3
+      - SERVER_HOST=print-server
+      - SERVER_PORT=50051
+      - CLIENT_PORT=50054
+      - OTHER_CLIENTS=client-1:50052,client-2:50053
+    ports:
+      - "50054:50054"
+    networks:
+      - print-network
+    depends_on:
+      - print-server
+
+networks:
+  print-network:
+    driver: bridge  
