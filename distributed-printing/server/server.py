@@ -4,16 +4,33 @@ from distributed_printing import printing_pb2
 from distributed_printing import printing_pb2_grpc
 from concurrent import futures
 import logging
+import random
+import threading
+from queue import PriorityQueue
 
 class PrintingService(printing_pb2_grpc.PrintingServiceServicer):
+    def __init__(self):
+        self.request_queue = PriorityQueue()
+        self.lock = threading.Lock()
+        self.next_timestamp = 0
+        self.printer_thread = threading.Thread(target=self._process_queue, daemon=True)
+        self.printer_thread.start()
+
     def SendToPrinter(self, request, context):
-        print(f"[TS: {request.lamport_timestamp}] CLIENT {request.client_id}: {request.message_content}", flush=True)
-        time.sleep(2)  # Simulate printing time
+        # Add request to priority queue (sorted by lamport_timestamp)
+        self.request_queue.put((request.lamport_timestamp, request.client_id, request.message_content))
+
         return printing_pb2.PrintResponse(
             success=True,
             confirmation_message=f"Document printed successfully for client {request.client_id}",
             lamport_timestamp=request.lamport_timestamp + 1
         )
+
+    def _process_queue(self):
+        while True:
+            if not self.request_queue.empty():
+                timestamp, client_id, message_content = self.request_queue.get()
+                print(f"[TS: {timestamp}] CLIENTE {client_id}: {message_content}", flush=True)
 
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
