@@ -1,0 +1,243 @@
+# Docker Compose for 3-Node Distributed Skin IA System
+#
+# This configuration sets up a distributed system with:
+# - 3 API nodes (each running FastAPI + ML models)
+# - Shared PostgreSQL database
+# - Shared Redis for coordination
+# - Bully election algorithm for leader selection
+# - Lamport clock synchronization
+# - Heartbeat-based failure detection
+#
+# Usage:
+#   docker-compose -f docker-compose.distributed.yml up --build
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Shared Database
+  # ============================================================================
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: skinia
+      POSTGRES_USER: skinia
+      POSTGRES_PASSWORD: skinia
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - distributed_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skinia"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Shared Redis
+  # ============================================================================
+  redis:
+    image: redis:7
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - distributed_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Node 3
+  # ============================================================================
+  node3:
+    build:
+      context: .
+      dockerfile: Codigo/api/Dockerfile
+    environment:
+      # Database configuration
+      DATABASE_URL: postgresql+psycopg://skinia:skinia@db:5432/skinia
+      REDIS_URL: redis://redis:6379/0
+
+      # ML configuration (Force CPU-only, disable GPU)
+      TENSORFLOW_FORCE_CPU: "1"
+      CUDA_VISIBLE_DEVICES: "-1"
+      TF_CPP_MIN_LOG_LEVEL: "2"
+      TF_ENABLE_ONEDNN_OPTS: "0"
+
+      # Distributed system configuration
+      ENABLE_DISTRIBUTED: "true"
+      NODE_ID: "3"
+      NODE_1_ADDRESS: "node1:8000"
+      NODE_2_ADDRESS: "node2:8000"
+      NODE_3_ADDRESS: "node3:8000"
+
+      # gRPC configuration (set USE_GRPC=true to enable gRPC instead of HTTP)
+      USE_GRPC: "true"
+      GRPC_PORT: "50051"
+    ports:
+      - "8003:8000"  # HTTP API
+      - "50053:50051"  # gRPC port (for USE_GRPC=true)
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - distributed_network
+    volumes:
+      - ./Artefatos:/app/Artefatos
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # ============================================================================
+  # Node 2
+  # ============================================================================
+  node2:
+    build:
+      context: .
+      dockerfile: Codigo/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://skinia:skinia@db:5432/skinia
+      REDIS_URL: redis://redis:6379/0
+
+      # ML configuration (Force CPU-only, disable GPU)
+      TENSORFLOW_FORCE_CPU: "1"
+      CUDA_VISIBLE_DEVICES: "-1"
+      TF_CPP_MIN_LOG_LEVEL: "2"
+      TF_ENABLE_ONEDNN_OPTS: "0"
+
+      # Distributed system configuration
+      ENABLE_DISTRIBUTED: "true"
+      NODE_ID: "2"
+      NODE_1_ADDRESS: "node1:8000"
+      NODE_2_ADDRESS: "node2:8000"
+      NODE_3_ADDRESS: "node3:8000"
+
+      # gRPC configuration (set USE_GRPC=true to enable gRPC instead of HTTP)
+      USE_GRPC: "true"
+      GRPC_PORT: "50051"
+    ports:
+      - "8002:8000"  # HTTP API
+      - "50052:50051"  # gRPC port (for USE_GRPC=true)
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+    networks:
+      - distributed_network
+    volumes:
+      - ./Artefatos:/app/Artefatos
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # ============================================================================
+  # Node 1
+  # ============================================================================
+  node1:
+    build:
+      context: .
+      dockerfile: Codigo/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://skinia:skinia@db:5432/skinia
+      REDIS_URL: redis://redis:6379/0
+
+      # ML configuration (Force CPU-only, disable GPU)
+      TENSORFLOW_FORCE_CPU: "1"
+      CUDA_VISIBLE_DEVICES: "-1"
+      TF_CPP_MIN_LOG_LEVEL: "2"
+      TF_ENABLE_ONEDNN_OPTS: "0"
+
+      # Distributed system configuration
+      ENABLE_DISTRIBUTED: "true"
+      NODE_ID: "1"
+      NODE_1_ADDRESS: "node1:8000"
+      NODE_2_ADDRESS: "node2:8000"
+      NODE_3_ADDRESS: "node3:8000"
+
+      # gRPC configuration (set USE_GRPC=true to enable gRPC instead of HTTP)
+      USE_GRPC: "true"
+      GRPC_PORT: "50051"
+    ports:
+      - "8001:8000"  # HTTP API
+      - "50051:50051"  # gRPC port (for USE_GRPC=true)
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+    networks:
+      - distributed_network
+    volumes:
+      - ./Artefatos:/app/Artefatos
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # ============================================================================
+  # Nginx Load Balancer (for distributing client requests)
+  # ============================================================================
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - node1
+      - node2
+      - node3
+    networks:
+      - distributed_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  distributed_network:
+    driver: bridge
+
+volumes:
+  db_data:
+  redis_data:

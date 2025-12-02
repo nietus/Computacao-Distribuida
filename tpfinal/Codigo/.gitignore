@@ -1,0 +1,42 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Generated protobuf files
+*_pb2.py
+*_pb2_grpc.py
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Models (large files)
+models/
+*.keras
+*.h5
+*.pt
+*.pth
+
+# Database
+*.db
+*.sqlite3
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+test_results/
+coverage/

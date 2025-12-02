@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skin-ia-api"
+version = "0.1.0"
+description = "FastAPI monolith for the Skin IA MVP"
+readme = "README.md"
+authors = [{name = "Skin IA Team"}]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "argon2-cffi>=23.1",
+    "python-multipart>=0.0.9",
+    "redis>=5.0",
+    "tensorflow>=2.15; platform_machine == \"x86_64\"",
+    "tensorflow-macos; platform_system == \"Darwin\" and platform_machine == \"arm64\"",
+    "tensorflow-metal; platform_system == \"Darwin\" and platform_machine == \"arm64\"",
+]
+
+[project.optional-dependencies]
+cuda = [
+    "tensorflow[and-cuda]>=2.15",
+    "nvidia-cublas-cu12>=12.3.4.1",
+    "nvidia-cuda-runtime-cu12>=12.3.101",
+    "nvidia-cudnn-cu12>=9.1.0.70",
+    "nvidia-curand-cu12>=10.3.4.107",
+    "nvidia-cusolver-cu12>=11.5.2.107",
+    "nvidia-cusparse-cu12>=12.3.0.106",
+    "nvidia-nccl-cu12>=2.19.3",
+    "nvidia-nvtx-cu12>=12.3.101",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["Codigo.api*"]

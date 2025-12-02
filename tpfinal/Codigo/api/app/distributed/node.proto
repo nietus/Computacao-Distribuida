@@ -1,0 +1,73 @@
+// gRPC service definition for distributed node communication
+syntax = "proto3";
+
+package distributed;
+
+// Node service for inter-node communication
+service NodeService {
+  // Health check / heartbeat
+  rpc Ping(PingRequest) returns (PingResponse);
+
+  // Election messages (Bully algorithm)
+  rpc SendElection(ElectionRequest) returns (ElectionResponse);
+
+  // Task distribution
+  rpc AssignTask(TaskAssignment) returns (TaskAcknowledgement);
+
+  // Node status query
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+}
+
+// Ping/Heartbeat messages
+message PingRequest {
+  int32 sender_id = 1;
+  int64 timestamp = 2;
+}
+
+message PingResponse {
+  int32 responder_id = 1;
+  int64 timestamp = 2;
+  string status = 3;
+}
+
+// Election messages
+message ElectionRequest {
+  int32 sender_id = 1;
+  string message_type = 2;  // "ELECTION", "OK", "COORDINATOR"
+  int64 timestamp = 3;
+}
+
+message ElectionResponse {
+  bool acknowledged = 1;
+  int64 timestamp = 2;
+}
+
+// Task distribution messages
+message TaskAssignment {
+  string task_id = 1;
+  string task_type = 2;  // "analyze_image"
+  bytes payload = 3;
+  int64 timestamp = 4;
+  int32 assigned_by = 5;
+}
+
+message TaskAcknowledgement {
+  string task_id = 1;
+  bool accepted = 2;
+  string message = 3;
+}
+
+// Status messages
+message StatusRequest {
+  int32 sender_id = 1;
+}
+
+message StatusResponse {
+  int32 node_id = 1;
+  bool is_leader = 2;
+  int32 leader_id = 3;
+  int64 lamport_clock = 4;
+  repeated int32 active_nodes = 5;
+  int32 pending_tasks = 6;
+  string hardware_info = 7;
+}
