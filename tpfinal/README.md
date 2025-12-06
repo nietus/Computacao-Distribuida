@@ -504,7 +504,7 @@ Tempo    Evento                                    Estado do Sistema
 cd tpfinal
 
 # Construir e iniciar todos os serviços
-
+docker-compose -f docker-compose.distributed.yml up --build
 ```
 
 ### Verificar Logs
