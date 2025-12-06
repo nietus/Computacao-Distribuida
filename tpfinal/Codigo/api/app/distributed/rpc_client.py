@@ -1,8 +1,8 @@
 """
-RPC Client for inter-node communication.
+gRPC-based RPC Client for inter-node communication.
 
-Provides client-side RPC calls to other nodes in the distributed system.
-Uses HTTP/JSON for inter-node communication.
+This is the production implementation using gRPC instead of HTTP/JSON.
+Provides better performance with binary protocol buffers.
 """
 from __future__ import annotations
 
@@ -10,48 +10,78 @@ import asyncio
 import logging
 from typing import Any
 
-import aiohttp
+import grpc
+
+# Import generated protobuf classes
+from . import node_pb2
+from . import node_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
 
-class RPCClient:
+class GRPCClient:
     """
-    Simplified RPC client using HTTP/JSON (no gRPC dependency for now).
+    Production RPC client using gRPC with Protocol Buffers.
 
-    In production, replace with gRPC implementation using node.proto.
-    For academic purposes, this demonstrates the RPC pattern.
+    Provides efficient binary communication between distributed nodes.
     """
 
     def __init__(self, node_id: int, node_addresses: dict[int, str]):
         """
-        Initialize RPC client.
+        Initialize gRPC client.
 
         Args:
             node_id: This node's ID
-            node_addresses: Mapping of node_id -> "host:port"
+            node_addresses: Mapping of node_id -> "host:port" (gRPC ports)
         """
         self.node_id = node_id
         self.node_addresses = node_addresses
-        self._session: aiohttp.ClientSession | None = None
-        self._timeout = aiohttp.ClientTimeout(total=2.0)
+        self._channels: dict[int, grpc.aio.Channel] = {}
+        self._stubs: dict[int, node_pb2_grpc.NodeServiceStub] = {}
 
-        logger.info(f"RPC Client initialized for node {node_id}")
+        logger.info(f"gRPC Client initialized for node {node_id}")
         logger.info(f"Known nodes: {node_addresses}")
 
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(timeout=self._timeout)
-        return self._session
+    async def _get_stub(self, target_node_id: int) -> node_pb2_grpc.NodeServiceStub | None:
+        """Get or create gRPC stub for target node."""
+        if target_node_id not in self._stubs:
+            address = self.node_addresses.get(target_node_id)
+            if not address:
+                logger.warning(f"No address for node {target_node_id}")
+                return None
+
+            # Create channel and stub
+            channel = grpc.aio.insecure_channel(address)
+            self._channels[target_node_id] = channel
+            self._stubs[target_node_id] = node_pb2_grpc.NodeServiceStub(channel)
+            logger.debug(f"Created gRPC channel to node {target_node_id} at {address}")
+
+        return self._stubs[target_node_id]
 
     def get_node_address(self, target_node_id: int) -> str | None:
         """Get address for target node."""
         return self.node_addresses.get(target_node_id)
 
+    async def _invalidate_channel(self, target_node_id: int) -> None:
+        """
+        Invalidate cached channel for a node.
+
+        Called on connection failures so next ping creates a fresh connection.
+        This allows recovery when a node restarts.
+        """
+        if target_node_id in self._channels:
+            try:
+                await self._channels[target_node_id].close()
+            except Exception:
+                pass  # Ignore errors closing broken channel
+            del self._channels[target_node_id]
+        if target_node_id in self._stubs:
+            del self._stubs[target_node_id]
+        logger.debug(f"Node {self.node_id}: Invalidated channel to node {target_node_id}")
+
     async def ping(self, target_node_id: int, timestamp: int) -> dict[str, Any] | None:
         """
-        Send ping/heartbeat to target node.
+        Send ping/heartbeat to target node via gRPC.
 
         Args:
             target_node_id: Node to ping
@@ -61,41 +91,41 @@ class RPCClient:
             Response dict or None if failed
         """
         try:
-            address = self.get_node_address(target_node_id)
-            if not address:
-                logger.warning(f"No address for node {target_node_id}")
+            stub = await self._get_stub(target_node_id)
+            if not stub:
                 return None
 
-            logger.debug(f"Node {self.node_id}: Pinging node {target_node_id} at {address}")
+            logger.debug(f"Node {self.node_id}: Pinging node {target_node_id} via gRPC")
 
-            # Extract host and port from address (format: "host:port")
-            if ':' in address:
-                host, port = address.rsplit(':', 1)
-            else:
-                host, port = address, '8000'
+            # Create protobuf request
+            request = node_pb2.PingRequest(
+                sender_id=self.node_id,
+                timestamp=timestamp
+            )
 
-            url = f"http://{host}:{port}/v1/rpc/ping"
-            session = await self._get_session()
+            # Make gRPC call with timeout
+            response = await asyncio.wait_for(
+                stub.Ping(request),
+                timeout=1.5
+            )
 
-            async with session.post(
-                url,
-                json={
-                    "sender_id": self.node_id,
-                    "timestamp": timestamp
-                }
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    logger.warning(f"Ping to node {target_node_id} returned status {response.status}")
-                    return None
+            return {
+                "node_id": response.responder_id,
+                "status": response.status,
+                "timestamp": response.timestamp
+            }
 
         except asyncio.TimeoutError:
-            logger.debug(f"Node {self.node_id}: Ping timeout to {target_node_id}")
+            logger.debug(f"Node {self.node_id}: gRPC ping timeout to {target_node_id}")
+            await self._invalidate_channel(target_node_id)
+            return None
+        except grpc.RpcError as e:
+            logger.debug(f"Node {self.node_id}: gRPC error pinging {target_node_id}: {e.code()}")
+            await self._invalidate_channel(target_node_id)
             return None
         except Exception as e:
             logger.debug(f"Node {self.node_id}: Failed to ping {target_node_id}: {e}")
+            await self._invalidate_channel(target_node_id)
             return None
 
     async def send_election_message(
@@ -105,7 +135,7 @@ class RPCClient:
         timestamp: int
     ) -> bool:
         """
-        Send election-related message (Bully algorithm).
+        Send election-related message via gRPC (Bully algorithm).
 
         Args:
             target_node_id: Destination node
@@ -116,32 +146,28 @@ class RPCClient:
             True if successful
         """
         try:
-            address = self.get_node_address(target_node_id)
-            if not address:
+            stub = await self._get_stub(target_node_id)
+            if not stub:
                 return False
 
             logger.debug(
-                f"Node {self.node_id}: Sending {message_type} to {target_node_id}"
+                f"Node {self.node_id}: Sending {message_type} to {target_node_id} via gRPC"
             )
 
-            # Extract host and port
-            if ':' in address:
-                host, port = address.rsplit(':', 1)
-            else:
-                host, port = address, '8000'
+            # Create protobuf request
+            request = node_pb2.ElectionRequest(
+                sender_id=self.node_id,
+                message_type=message_type,
+                timestamp=timestamp
+            )
 
-            url = f"http://{host}:{port}/v1/rpc/election"
-            session = await self._get_session()
+            # Make gRPC call with timeout
+            response = await asyncio.wait_for(
+                stub.SendElection(request),
+                timeout=2.0
+            )
 
-            async with session.post(
-                url,
-                json={
-                    "sender_id": self.node_id,
-                    "message_type": message_type,
-                    "timestamp": timestamp
-                }
-            ) as response:
-                return response.status == 200
+            return response.acknowledged
 
         except Exception as e:
             logger.debug(
@@ -158,54 +184,47 @@ class RPCClient:
         timestamp: int
     ) -> dict[str, Any] | None:
         """
-        Assign task to another node.
+        Assign task to another node via gRPC.
 
         Args:
             target_node_id: Node to assign task to
             task_id: Unique task identifier
             task_type: Type of task (e.g., "analyze_image")
-            payload: Task data
+            payload: Task data (binary)
             timestamp: Lamport timestamp
 
         Returns:
             Acknowledgement dict or None if failed
         """
         try:
-            address = self.get_node_address(target_node_id)
-            if not address:
+            stub = await self._get_stub(target_node_id)
+            if not stub:
                 return None
 
             logger.info(
-                f"Node {self.node_id}: Assigning task {task_id} to node {target_node_id}"
+                f"Node {self.node_id}: Assigning task {task_id} to node {target_node_id} via gRPC"
             )
 
-            # Extract host and port
-            if ':' in address:
-                host, port = address.rsplit(':', 1)
-            else:
-                host, port = address, '8000'
+            # Create protobuf request (payload is already bytes)
+            request = node_pb2.TaskAssignment(
+                task_id=task_id,
+                task_type=task_type,
+                payload=payload,
+                timestamp=timestamp,
+                assigned_by=self.node_id
+            )
 
-            url = f"http://{host}:{port}/v1/rpc/task"
-            session = await self._get_session()
+            # Make gRPC call with timeout
+            response = await asyncio.wait_for(
+                stub.AssignTask(request),
+                timeout=3.0
+            )
 
-            # Convert payload to base64 for JSON transport
-            import base64
-            payload_b64 = base64.b64encode(payload).decode('utf-8')
-
-            async with session.post(
-                url,
-                json={
-                    "sender_id": self.node_id,
-                    "task_id": task_id,
-                    "task_type": task_type,
-                    "payload": payload_b64,
-                    "timestamp": timestamp
-                }
-            ) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    return None
+            return {
+                "task_id": response.task_id,
+                "accepted": response.accepted,
+                "message": response.message
+            }
 
         except Exception as e:
             logger.error(
@@ -215,7 +234,7 @@ class RPCClient:
 
     async def get_node_status(self, target_node_id: int) -> dict[str, Any] | None:
         """
-        Query status of another node.
+        Query status of another node via gRPC.
 
         Args:
             target_node_id: Node to query
@@ -224,18 +243,29 @@ class RPCClient:
             Status dict or None if failed
         """
         try:
-            address = self.get_node_address(target_node_id)
-            if not address:
+            stub = await self._get_stub(target_node_id)
+            if not stub:
                 return None
 
-            logger.debug(f"Node {self.node_id}: Querying status of node {target_node_id}")
+            logger.debug(f"Node {self.node_id}: Querying status of node {target_node_id} via gRPC")
 
-            # Simulate RPC call
-            await asyncio.sleep(0.01)
+            # Create protobuf request
+            request = node_pb2.StatusRequest(sender_id=self.node_id)
+
+            # Make gRPC call with timeout
+            response = await asyncio.wait_for(
+                stub.GetStatus(request),
+                timeout=2.0
+            )
+
             return {
-                "node_id": target_node_id,
-                "is_leader": False,
-                "status": "active"
+                "node_id": response.node_id,
+                "is_leader": response.is_leader,
+                "leader_id": response.leader_id,
+                "lamport_clock": response.lamport_clock,
+                "active_nodes": list(response.active_nodes),
+                "pending_tasks": response.pending_tasks,
+                "hardware_info": response.hardware_info
             }
 
         except Exception as e:
@@ -245,7 +275,11 @@ class RPCClient:
             return None
 
     async def close(self) -> None:
-        """Close all connections."""
-        logger.info(f"Node {self.node_id}: Closing RPC connections")
-        if self._session and not self._session.closed:
-            await self._session.close()
+        """Close all gRPC channels."""
+        logger.info(f"Node {self.node_id}: Closing gRPC connections")
+        for node_id, channel in self._channels.items():
+            await channel.close()
+            logger.debug(f"Closed gRPC channel to node {node_id}")
+
+        self._channels.clear()
+        self._stubs.clear()

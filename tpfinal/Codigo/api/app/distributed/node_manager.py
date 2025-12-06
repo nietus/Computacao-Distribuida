@@ -17,16 +17,8 @@ from typing import Any, Callable
 from .election import BullyElection, ElectionMessage
 from .heartbeat import HeartbeatMonitor
 from .lamport_clock import LamportClock
-from .rpc_client import RPCClient
+from .rpc_client import GRPCClient
 from .task_distributor import TaskDistributor
-
-# Import gRPC client (optional)
-try:
-    from .rpc_client_grpc import GRPCClient
-    GRPC_AVAILABLE = True
-except ImportError:
-    GRPC_AVAILABLE = False
-    GRPCClient = None
 
 logger = logging.getLogger(__name__)
 
@@ -44,37 +36,28 @@ class DistributedNode:
         node_id: int,
         node_addresses: dict[int, str],
         on_task_assigned: Callable[[str, bytes], asyncio.Future] | None = None,
-        use_grpc: bool = False
     ):
         """
         Initialize distributed node.
 
         Args:
             node_id: Unique identifier for this node (1, 2, 3)
-            node_addresses: Mapping of node_id -> "host:port" (or "host:grpc_port" if use_grpc=True)
+            node_addresses: Mapping of node_id -> "host:grpc_port" (e.g., "node1:50051")
             on_task_assigned: Callback when task is assigned to this node
-            use_grpc: If True, use gRPC instead of HTTP/JSON for RPC (default: False)
         """
         self.node_id = node_id
         self.node_addresses = node_addresses
         self.all_node_ids = list(node_addresses.keys())
         self.on_task_assigned = on_task_assigned
         self.on_task_assigned_tensorflow = None  # Callback for TensorFlow tasks
-        self.use_grpc = use_grpc
         self.grpc_server = None  # Will hold gRPC server instance
 
         # Initialize components
         self.clock = LamportClock()
 
-        # Choose RPC implementation
-        if use_grpc and GRPC_AVAILABLE:
-            logger.info(f"Node {node_id}: Using gRPC for inter-node communication")
-            self.rpc_client = GRPCClient(node_id, node_addresses)
-        else:
-            if use_grpc:
-                logger.warning(f"Node {node_id}: gRPC requested but not available, falling back to HTTP")
-            logger.info(f"Node {node_id}: Using HTTP/JSON for inter-node communication")
-            self.rpc_client = RPCClient(node_id, node_addresses)
+        # Initialize gRPC client (exclusive communication method)
+        logger.info(f"Node {node_id}: Using gRPC for inter-node communication")
+        self.rpc_client = GRPCClient(node_id, node_addresses)
 
         # Initialize Bully election
         self.election = BullyElection(
@@ -130,12 +113,11 @@ class DistributedNode:
         self.running = True
         logger.info(f"Node {self.node_id}: Starting distributed node...")
 
-        # Start gRPC server if using gRPC
-        if self.use_grpc and GRPC_AVAILABLE:
-            from .grpc_server import serve_grpc
-            grpc_port = int(os.getenv("GRPC_PORT", "50051"))
-            self.grpc_server = await serve_grpc(self, port=grpc_port)
-            logger.info(f"Node {self.node_id}: gRPC server started on port {grpc_port}")
+        # Start gRPC server
+        from .grpc_server import serve_grpc
+        grpc_port = int(os.getenv("GRPC_PORT", "50051"))
+        self.grpc_server = await serve_grpc(self, port=grpc_port)
+        logger.info(f"Node {self.node_id}: gRPC server started on port {grpc_port}")
 
         # Start heartbeat monitoring
         await self.heartbeat.start()
@@ -389,34 +371,24 @@ def create_node_from_env() -> DistributedNode:
 
     Expected env vars:
     - NODE_ID: This node's ID (1, 2, or 3)
-    - NODE_1_ADDRESS: Address of node 1 (e.g., "node1:8000" for HTTP or "node1:50051" for gRPC)
+    - NODE_1_ADDRESS: Address of node 1 (e.g., "node1:50051")
     - NODE_2_ADDRESS: Address of node 2
     - NODE_3_ADDRESS: Address of node 3
-    - USE_GRPC: "true" to enable gRPC, "false" for HTTP/JSON (default: false)
     - GRPC_PORT: gRPC port to listen on (default: 50051)
+
+    Note: gRPC is now the exclusive communication method for inter-node communication.
     """
     node_id = int(os.getenv("NODE_ID", "1"))
-    use_grpc = os.getenv("USE_GRPC", "false").lower() == "true"
 
-    # Node addresses depend on protocol
-    if use_grpc:
-        # For gRPC, use gRPC ports
-        node_addresses = {
-            1: os.getenv("NODE_1_ADDRESS", "node1:50051"),
-            2: os.getenv("NODE_2_ADDRESS", "node2:50051"),
-            3: os.getenv("NODE_3_ADDRESS", "node3:50051"),
-        }
-    else:
-        # For HTTP, use HTTP ports
-        node_addresses = {
-            1: os.getenv("NODE_1_ADDRESS", "node1:8000"),
-            2: os.getenv("NODE_2_ADDRESS", "node2:8000"),
-            3: os.getenv("NODE_3_ADDRESS", "node3:8000"),
-        }
+    # Node addresses for gRPC
+    node_addresses = {
+        1: os.getenv("NODE_1_ADDRESS", "node1:50051"),
+        2: os.getenv("NODE_2_ADDRESS", "node2:50051"),
+        3: os.getenv("NODE_3_ADDRESS", "node3:50051"),
+    }
 
     logger.info(
-        f"Creating node {node_id} with addresses: {node_addresses}, "
-        f"using {'gRPC' if use_grpc else 'HTTP/JSON'}"
+        f"Creating node {node_id} with gRPC addresses: {node_addresses}"
     )
 
-    return DistributedNode(node_id=node_id, node_addresses=node_addresses, use_grpc=use_grpc)
+    return DistributedNode(node_id=node_id, node_addresses=node_addresses)

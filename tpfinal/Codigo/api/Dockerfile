@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && pip install --upgrade pip \
     && pip install -r requirements.txt
 
+# Model is mounted via docker-compose volume at /app/Artefatos/model/cnn_model.keras
 RUN mkdir -p /app/Artefatos/model
-COPY cnn_model.keras /app/Artefatos/model/cnn_model.keras
 
 COPY Codigo /app/Codigo
 
@@ -21,7 +21,8 @@ RUN python -m grpc_tools.protoc \
     -I/app/Codigo/api/app/distributed \
     --python_out=/app/Codigo/api/app/distributed \
     --grpc_python_out=/app/Codigo/api/app/distributed \
-    /app/Codigo/api/app/distributed/node.proto
+    /app/Codigo/api/app/distributed/node.proto \
+    && sed -i 's/^import node_pb2/from . import node_pb2/' /app/Codigo/api/app/distributed/node_pb2_grpc.py
 
 EXPOSE 8000
 EXPOSE 50051

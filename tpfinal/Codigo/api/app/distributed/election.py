@@ -142,15 +142,20 @@ class BullyElection:
         except asyncio.TimeoutError:
             logger.warning(f"Node {self.node_id}: Election timeout")
 
-        # Wait a bit for OK responses to arrive
-        await asyncio.sleep(0.5)
+        # Wait for OK responses to arrive
+        await asyncio.sleep(1.0)
 
-        if not self.received_ok:
+        async with self._lock:
+            got_ok = self.received_ok
+
+        if not got_ok:
             # No higher node responded, I win!
             await self._become_leader()
         else:
-            # Wait for COORDINATOR message
+            # Higher node will take over, wait for COORDINATOR message
             logger.info(f"Node {self.node_id}: Received OK, waiting for COORDINATOR")
+            async with self._lock:
+                self.election_in_progress = False
             await self._wait_for_coordinator()
 
     async def _become_leader(self) -> None:
@@ -220,6 +225,16 @@ class BullyElection:
 
     async def handle_coordinator_message(self, msg: ElectionMessage) -> None:
         """Handle incoming COORDINATOR message (new leader announcement)."""
+        # Only accept COORDINATOR from nodes with higher or equal ID
+        # A lower-ID node cannot be leader if we are alive!
+        if msg.sender_id < self.node_id:
+            logger.warning(
+                f"Node {self.node_id}: Rejecting COORDINATOR from lower node {msg.sender_id}, "
+                "starting my own election"
+            )
+            asyncio.create_task(self.start_election())
+            return
+
         logger.info(f"Node {self.node_id}: New leader is {msg.sender_id}")
 
         async with self._lock:

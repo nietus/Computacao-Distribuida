@@ -74,16 +74,15 @@ services:
       # Distributed system configuration
       ENABLE_DISTRIBUTED: "true"
       NODE_ID: "3"
-      NODE_1_ADDRESS: "node1:8000"
-      NODE_2_ADDRESS: "node2:8000"
-      NODE_3_ADDRESS: "node3:8000"
+      NODE_1_ADDRESS: "node1:50051"
+      NODE_2_ADDRESS: "node2:50051"
+      NODE_3_ADDRESS: "node3:50051"
 
-      # gRPC configuration (set USE_GRPC=true to enable gRPC instead of HTTP)
-      USE_GRPC: "true"
+      # gRPC configuration (gRPC is now the exclusive communication method)
       GRPC_PORT: "50051"
     ports:
-      - "8003:8000"  # HTTP API
-      - "50053:50051"  # gRPC port (for USE_GRPC=true)
+      - "8003:8000"  # HTTP API (for client requests only)
+      - "50053:50051"  # gRPC port (inter-node communication)
     depends_on:
       db:
         condition: service_healthy
@@ -125,16 +124,15 @@ services:
       # Distributed system configuration
       ENABLE_DISTRIBUTED: "true"
       NODE_ID: "2"
-      NODE_1_ADDRESS: "node1:8000"
-      NODE_2_ADDRESS: "node2:8000"
-      NODE_3_ADDRESS: "node3:8000"
+      NODE_1_ADDRESS: "node1:50051"
+      NODE_2_ADDRESS: "node2:50051"
+      NODE_3_ADDRESS: "node3:50051"
 
-      # gRPC configuration (set USE_GRPC=true to enable gRPC instead of HTTP)
-      USE_GRPC: "true"
+      # gRPC configuration (gRPC is now the exclusive communication method)
       GRPC_PORT: "50051"
     ports:
-      - "8002:8000"  # HTTP API
-      - "50052:50051"  # gRPC port (for USE_GRPC=true)
+      - "8002:8000"  # HTTP API (for client requests only)
+      - "50052:50051"  # gRPC port (inter-node communication)
     depends_on:
       db:
         condition: service_healthy
@@ -178,16 +176,15 @@ services:
       # Distributed system configuration
       ENABLE_DISTRIBUTED: "true"
       NODE_ID: "1"
-      NODE_1_ADDRESS: "node1:8000"
-      NODE_2_ADDRESS: "node2:8000"
-      NODE_3_ADDRESS: "node3:8000"
+      NODE_1_ADDRESS: "node1:50051"
+      NODE_2_ADDRESS: "node2:50051"
+      NODE_3_ADDRESS: "node3:50051"
 
-      # gRPC configuration (set USE_GRPC=true to enable gRPC instead of HTTP)
-      USE_GRPC: "true"
+      # gRPC configuration (gRPC is now the exclusive communication method)
       GRPC_PORT: "50051"
     ports:
-      - "8001:8000"  # HTTP API
-      - "50051:50051"  # gRPC port (for USE_GRPC=true)
+      - "8001:8000"  # HTTP API (for client requests only)
+      - "50051:50051"  # gRPC port (inter-node communication)
     depends_on:
       db:
         condition: service_healthy

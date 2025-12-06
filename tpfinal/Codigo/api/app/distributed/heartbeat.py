@@ -184,7 +184,7 @@ class HeartbeatMonitor:
                                 "Triggering election..."
                             )
                             if self.on_leader_failed:
-                                self.on_leader_failed()
+                                asyncio.create_task(self.on_leader_failed())
 
         except asyncio.TimeoutError:
             async with self._lock:
