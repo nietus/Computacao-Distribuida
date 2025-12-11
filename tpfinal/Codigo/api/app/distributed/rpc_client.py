@@ -1,8 +1,8 @@
 """
-gRPC-based RPC Client for inter-node communication.
+Cliente RPC baseado em gRPC para comunicação entre nós.
 
-This is the production implementation using gRPC instead of HTTP/JSON.
-Provides better performance with binary protocol buffers.
+Implementação de produção usando gRPC ao invés de HTTP/JSON.
+Proporciona melhor desempenho com protocol buffers binários.
 """
 from __future__ import annotations
 
@@ -21,18 +21,18 @@ logger = logging.getLogger(__name__)
 
 class GRPCClient:
     """
-    Production RPC client using gRPC with Protocol Buffers.
+    Cliente RPC de produção usando gRPC com Protocol Buffers.
 
-    Provides efficient binary communication between distributed nodes.
+    Proporciona comunicação binária eficiente entre nós distribuídos.
     """
 
     def __init__(self, node_id: int, node_addresses: dict[int, str]):
         """
-        Initialize gRPC client.
+        Inicializa o cliente gRPC.
 
         Args:
-            node_id: This node's ID
-            node_addresses: Mapping of node_id -> "host:port" (gRPC ports)
+            node_id: ID deste nó
+            node_addresses: Mapeamento de node_id -> "host:port" (portas gRPC)
         """
         self.node_id = node_id
         self.node_addresses = node_addresses
@@ -43,14 +43,13 @@ class GRPCClient:
         logger.info(f"Known nodes: {node_addresses}")
 
     async def _get_stub(self, target_node_id: int) -> node_pb2_grpc.NodeServiceStub | None:
-        """Get or create gRPC stub for target node."""
+        """Obtém ou cria stub gRPC para o nó alvo."""
         if target_node_id not in self._stubs:
             address = self.node_addresses.get(target_node_id)
             if not address:
                 logger.warning(f"No address for node {target_node_id}")
                 return None
 
-            # Create channel and stub
             channel = grpc.aio.insecure_channel(address)
             self._channels[target_node_id] = channel
             self._stubs[target_node_id] = node_pb2_grpc.NodeServiceStub(channel)
@@ -59,21 +58,21 @@ class GRPCClient:
         return self._stubs[target_node_id]
 
     def get_node_address(self, target_node_id: int) -> str | None:
-        """Get address for target node."""
+        """Retorna o endereço do nó alvo."""
         return self.node_addresses.get(target_node_id)
 
     async def _invalidate_channel(self, target_node_id: int) -> None:
         """
-        Invalidate cached channel for a node.
+        Invalida canal em cache para um nó.
 
-        Called on connection failures so next ping creates a fresh connection.
-        This allows recovery when a node restarts.
+        Chamado em falhas de conexão para que o próximo ping crie uma conexão nova.
+        Permite recuperação quando um nó reinicia.
         """
         if target_node_id in self._channels:
             try:
                 await self._channels[target_node_id].close()
             except Exception:
-                pass  # Ignore errors closing broken channel
+                pass
             del self._channels[target_node_id]
         if target_node_id in self._stubs:
             del self._stubs[target_node_id]
@@ -81,14 +80,14 @@ class GRPCClient:
 
     async def ping(self, target_node_id: int, timestamp: int) -> dict[str, Any] | None:
         """
-        Send ping/heartbeat to target node via gRPC.
+        Envia ping/heartbeat para o nó alvo via gRPC.
 
         Args:
-            target_node_id: Node to ping
-            timestamp: Lamport timestamp
+            target_node_id: Nó para enviar ping
+            timestamp: Timestamp de Lamport
 
-        Returns:
-            Response dict or None if failed
+        Retorna:
+            Dict de resposta ou None se falhou
         """
         try:
             stub = await self._get_stub(target_node_id)
@@ -97,13 +96,11 @@ class GRPCClient:
 
             logger.debug(f"Node {self.node_id}: Pinging node {target_node_id} via gRPC")
 
-            # Create protobuf request
             request = node_pb2.PingRequest(
                 sender_id=self.node_id,
                 timestamp=timestamp
             )
 
-            # Make gRPC call with timeout
             response = await asyncio.wait_for(
                 stub.Ping(request),
                 timeout=1.5
@@ -135,15 +132,15 @@ class GRPCClient:
         timestamp: int
     ) -> bool:
         """
-        Send election-related message via gRPC (Bully algorithm).
+        Envia mensagem de eleição via gRPC (algoritmo Bully).
 
         Args:
-            target_node_id: Destination node
-            message_type: "ELECTION", "OK", or "COORDINATOR"
-            timestamp: Lamport timestamp
+            target_node_id: Nó de destino
+            message_type: "ELECTION", "OK" ou "COORDINATOR"
+            timestamp: Timestamp de Lamport
 
-        Returns:
-            True if successful
+        Retorna:
+            True se bem-sucedido
         """
         try:
             stub = await self._get_stub(target_node_id)
@@ -154,14 +151,12 @@ class GRPCClient:
                 f"Node {self.node_id}: Sending {message_type} to {target_node_id} via gRPC"
             )
 
-            # Create protobuf request
             request = node_pb2.ElectionRequest(
                 sender_id=self.node_id,
                 message_type=message_type,
                 timestamp=timestamp
             )
 
-            # Make gRPC call with timeout
             response = await asyncio.wait_for(
                 stub.SendElection(request),
                 timeout=2.0
@@ -184,17 +179,17 @@ class GRPCClient:
         timestamp: int
     ) -> dict[str, Any] | None:
         """
-        Assign task to another node via gRPC.
+        Atribui tarefa a outro nó via gRPC.
 
         Args:
-            target_node_id: Node to assign task to
-            task_id: Unique task identifier
-            task_type: Type of task (e.g., "analyze_image")
-            payload: Task data (binary)
-            timestamp: Lamport timestamp
+            target_node_id: Nó para atribuir a tarefa
+            task_id: Identificador único da tarefa
+            task_type: Tipo da tarefa (ex: "analyze_image")
+            payload: Dados da tarefa (binário)
+            timestamp: Timestamp de Lamport
 
-        Returns:
-            Acknowledgement dict or None if failed
+        Retorna:
+            Dict de confirmação ou None se falhou
         """
         try:
             stub = await self._get_stub(target_node_id)
@@ -205,7 +200,6 @@ class GRPCClient:
                 f"Node {self.node_id}: Assigning task {task_id} to node {target_node_id} via gRPC"
             )
 
-            # Create protobuf request (payload is already bytes)
             request = node_pb2.TaskAssignment(
                 task_id=task_id,
                 task_type=task_type,
@@ -214,7 +208,6 @@ class GRPCClient:
                 assigned_by=self.node_id
             )
 
-            # Make gRPC call with timeout
             response = await asyncio.wait_for(
                 stub.AssignTask(request),
                 timeout=3.0
@@ -234,13 +227,13 @@ class GRPCClient:
 
     async def get_node_status(self, target_node_id: int) -> dict[str, Any] | None:
         """
-        Query status of another node via gRPC.
+        Consulta status de outro nó via gRPC.
 
         Args:
-            target_node_id: Node to query
+            target_node_id: Nó para consultar
 
-        Returns:
-            Status dict or None if failed
+        Retorna:
+            Dict de status ou None se falhou
         """
         try:
             stub = await self._get_stub(target_node_id)
@@ -249,10 +242,8 @@ class GRPCClient:
 
             logger.debug(f"Node {self.node_id}: Querying status of node {target_node_id} via gRPC")
 
-            # Create protobuf request
             request = node_pb2.StatusRequest(sender_id=self.node_id)
 
-            # Make gRPC call with timeout
             response = await asyncio.wait_for(
                 stub.GetStatus(request),
                 timeout=2.0
@@ -275,7 +266,7 @@ class GRPCClient:
             return None
 
     async def close(self) -> None:
-        """Close all gRPC channels."""
+        """Fecha todos os canais gRPC."""
         logger.info(f"Node {self.node_id}: Closing gRPC connections")
         for node_id, channel in self._channels.items():
             await channel.close()

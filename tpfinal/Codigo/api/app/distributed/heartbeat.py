@@ -1,8 +1,8 @@
 """
-Fault Tolerance with Heartbeat Monitoring.
+Tolerância a Falhas com Monitoramento de Heartbeat.
 
-Implements failure detection using periodic heartbeats between nodes.
-Triggers leader election when leader failure is detected.
+Implementa detecção de falhas usando heartbeats periódicos entre nós.
+Dispara eleição de líder quando falha do líder é detectada.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class NodeHealth:
-    """Health information for a node."""
+    """Informações de saúde de um nó."""
     node_id: int
     last_heartbeat: float
     is_alive: bool = True
@@ -26,13 +26,13 @@ class NodeHealth:
 
 class HeartbeatMonitor:
     """
-    Heartbeat-based failure detection.
+    Detecção de falhas baseada em heartbeat.
 
-    Properties:
-    - Periodic ping to all nodes
-    - Tracks last successful heartbeat
-    - Declares node failed after N consecutive timeouts
-    - Triggers callbacks on node failure/recovery
+    Propriedades:
+    - Ping periódico para todos os nós
+    - Rastreia último heartbeat bem-sucedido
+    - Declara nó como falho após N timeouts consecutivos
+    - Dispara callbacks em falha/recuperação de nó
     """
 
     def __init__(
@@ -45,15 +45,15 @@ class HeartbeatMonitor:
         on_leader_failed: Callable[[], None] | None = None,
     ):
         """
-        Initialize heartbeat monitor.
+        Inicializa o monitor de heartbeat.
 
         Args:
-            node_id: This node's ID
-            all_node_ids: All nodes in cluster
-            ping_callback: Async function to ping another node, returns success bool
-            on_node_failed: Callback when node declared failed
-            on_node_recovered: Callback when failed node recovers
-            on_leader_failed: Callback when leader fails (triggers election)
+            node_id: ID deste nó
+            all_node_ids: Todos os nós no cluster
+            ping_callback: Função assíncrona para ping em outro nó, retorna bool de sucesso
+            on_node_failed: Callback quando nó é declarado falho
+            on_node_recovered: Callback quando nó falho se recupera
+            on_leader_failed: Callback quando líder falha (dispara eleição)
         """
         self.node_id = node_id
         self.all_node_ids = [nid for nid in all_node_ids if nid != node_id]
@@ -62,18 +62,15 @@ class HeartbeatMonitor:
         self.on_node_recovered = on_node_recovered
         self.on_leader_failed = on_leader_failed
 
-        # Health tracking
         self.node_health: dict[int, NodeHealth] = {
             nid: NodeHealth(node_id=nid, last_heartbeat=time.time())
             for nid in self.all_node_ids
         }
 
-        # Configuration
-        self.heartbeat_interval = 2.0  # seconds between heartbeats
-        self.failure_threshold = 3  # consecutive failures to declare dead
-        self.timeout = 1.5  # seconds to wait for ping response
+        self.heartbeat_interval = 2.0
+        self.failure_threshold = 3
+        self.timeout = 1.5
 
-        # State
         self.current_leader_id: int | None = None
         self.running = False
         self._monitor_task: asyncio.Task | None = None
@@ -85,12 +82,12 @@ class HeartbeatMonitor:
         )
 
     def set_leader(self, leader_id: int) -> None:
-        """Update current leader ID."""
+        """Atualiza o ID do líder atual."""
         self.current_leader_id = leader_id
         logger.info(f"Node {self.node_id}: Leader set to {leader_id}")
 
     async def start(self) -> None:
-        """Start heartbeat monitoring."""
+        """Inicia o monitoramento de heartbeat."""
         if self.running:
             logger.warning(f"Node {self.node_id}: Heartbeat monitor already running")
             return
@@ -100,7 +97,7 @@ class HeartbeatMonitor:
         logger.info(f"Node {self.node_id}: Heartbeat monitor started")
 
     async def stop(self) -> None:
-        """Stop heartbeat monitoring."""
+        """Para o monitoramento de heartbeat."""
         self.running = False
         if self._monitor_task:
             self._monitor_task.cancel()
@@ -111,7 +108,7 @@ class HeartbeatMonitor:
         logger.info(f"Node {self.node_id}: Heartbeat monitor stopped")
 
     async def _monitor_loop(self) -> None:
-        """Main monitoring loop."""
+        """Loop principal de monitoramento."""
         logger.info(f"Node {self.node_id}: Starting heartbeat loop")
 
         while self.running:
@@ -125,19 +122,18 @@ class HeartbeatMonitor:
                 await asyncio.sleep(1.0)
 
     async def _send_heartbeats(self) -> None:
-        """Send heartbeat to all nodes and check responses."""
+        """Envia heartbeat para todos os nós e verifica respostas."""
         tasks = [self._ping_node(nid) for nid in self.all_node_ids]
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _ping_node(self, target_node_id: int) -> None:
         """
-        Ping a specific node and update health status.
+        Envia ping para um nó específico e atualiza status de saúde.
 
         Args:
-            target_node_id: Node to ping
+            target_node_id: Nó para enviar ping
         """
         try:
-            # Send ping with timeout
             success = await asyncio.wait_for(
                 self.ping_callback(target_node_id),
                 timeout=self.timeout
@@ -147,25 +143,21 @@ class HeartbeatMonitor:
                 health = self.node_health[target_node_id]
 
                 if success:
-                    # Successful heartbeat
                     health.last_heartbeat = time.time()
                     health.consecutive_failures = 0
 
-                    # Check if node recovered
                     if not health.is_alive:
                         logger.info(f"Node {self.node_id}: Node {target_node_id} RECOVERED")
                         health.is_alive = True
                         if self.on_node_recovered:
                             self.on_node_recovered(target_node_id)
                 else:
-                    # Failed heartbeat
                     health.consecutive_failures += 1
                     logger.warning(
                         f"Node {self.node_id}: Ping to {target_node_id} failed "
                         f"({health.consecutive_failures}/{self.failure_threshold})"
                     )
 
-                    # Check if node should be declared failed
                     if (
                         health.consecutive_failures >= self.failure_threshold
                         and health.is_alive
@@ -173,11 +165,9 @@ class HeartbeatMonitor:
                         logger.error(f"Node {self.node_id}: Node {target_node_id} DECLARED FAILED")
                         health.is_alive = False
 
-                        # Trigger failure callbacks
                         if self.on_node_failed:
                             self.on_node_failed(target_node_id)
 
-                        # Check if leader failed
                         if target_node_id == self.current_leader_id:
                             logger.critical(
                                 f"Node {self.node_id}: LEADER {target_node_id} FAILED! "
@@ -199,22 +189,22 @@ class HeartbeatMonitor:
             logger.error(f"Node {self.node_id}: Error pinging {target_node_id}: {e}")
 
     def get_alive_nodes(self) -> list[int]:
-        """Get list of currently alive nodes (including self)."""
-        alive = [self.node_id]  # Include self
+        """Retorna lista de nós atualmente vivos (incluindo este)."""
+        alive = [self.node_id]
         for nid, health in self.node_health.items():
             if health.is_alive:
                 alive.append(nid)
         return sorted(alive)
 
     def is_node_alive(self, node_id: int) -> bool:
-        """Check if a specific node is alive."""
+        """Verifica se um nó específico está vivo."""
         if node_id == self.node_id:
             return True
         health = self.node_health.get(node_id)
         return health.is_alive if health else False
 
     def get_health_summary(self) -> dict[int, dict]:
-        """Get summary of all node health statuses."""
+        """Retorna resumo do status de saúde de todos os nós."""
         summary = {}
         for nid, health in self.node_health.items():
             summary[nid] = {

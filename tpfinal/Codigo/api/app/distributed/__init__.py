@@ -1,1 +1,1 @@
-"""Distributed systems components for Skin IA API."""
+"""Componentes de sistemas distribuídos para a API Skin IA."""

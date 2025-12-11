@@ -1,8 +1,8 @@
 """
-Lamport Logical Clock Implementation.
+Implementação do Relógio Lógico de Lamport.
 
-Implements Lamport's algorithm for logical clock synchronization in distributed systems.
-Reference: Lamport, L. (1978). "Time, Clocks, and the Ordering of Events in a Distributed System"
+Implementa o algoritmo de Lamport para sincronização de relógios lógicos em sistemas distribuídos.
+Referência: Lamport, L. (1978). "Time, Clocks, and the Ordering of Events in a Distributed System"
 """
 from __future__ import annotations
 
@@ -12,30 +12,29 @@ from typing import Any
 
 class LamportClock:
     """
-    Lamport logical clock for event ordering in distributed systems.
+    Relógio lógico de Lamport para ordenação de eventos em sistemas distribuídos.
 
-    Properties:
-    - Monotonically increasing counter
-    - Thread-safe operations
-    - Event ordering: if a -> b, then C(a) < C(b)
+    Propriedades:
+    - Contador monotonicamente crescente
+    - Operações thread-safe
+    - Ordenação de eventos: se a -> b, então C(a) < C(b)
     """
 
     def __init__(self) -> None:
-        """Initialize clock with counter = 0."""
         self._counter: int = 0
         self._lock = threading.Lock()
 
     def time(self) -> int:
-        """Get current clock value."""
+        """Retorna o valor atual do relógio."""
         with self._lock:
             return self._counter
 
     def tick(self) -> int:
         """
-        Increment clock for internal event.
+        Incrementa o relógio para evento interno.
 
-        Returns:
-            New clock value
+        Retorna:
+            Novo valor do relógio
         """
         with self._lock:
             self._counter += 1
@@ -43,33 +42,31 @@ class LamportClock:
 
     def send_event(self) -> int:
         """
-        Increment clock when sending a message.
+        Incrementa o relógio ao enviar uma mensagem.
 
-        Returns:
-            Timestamp to attach to message
+        Retorna:
+            Timestamp para anexar à mensagem
         """
         return self.tick()
 
     def receive_event(self, received_timestamp: int) -> int:
         """
-        Update clock when receiving a message.
+        Atualiza o relógio ao receber uma mensagem.
 
-        Lamport's rule: C(i) = max(C(i), received_timestamp) + 1
+        Regra de Lamport: C(i) = max(C(i), received_timestamp) + 1
 
         Args:
-            received_timestamp: Timestamp from received message
+            received_timestamp: Timestamp da mensagem recebida
 
-        Returns:
-            New local clock value
+        Retorna:
+            Novo valor do relógio local
         """
         with self._lock:
             self._counter = max(self._counter, received_timestamp) + 1
             return self._counter
 
     def __str__(self) -> str:
-        """String representation."""
         return f"LamportClock(time={self.time()})"
 
     def __repr__(self) -> str:
-        """Representation."""
         return self.__str__()

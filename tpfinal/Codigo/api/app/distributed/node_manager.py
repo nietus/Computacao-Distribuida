@@ -1,11 +1,11 @@
 """
-Distributed Node Manager.
+Gerenciador de Nó Distribuído.
 
-Orchestrates all distributed systems components:
-- Lamport logical clocks
-- Bully election algorithm
-- RPC communication
-- Heartbeat-based failure detection
+Orquestra todos os componentes do sistema distribuído:
+- Relógios lógicos de Lamport
+- Algoritmo de eleição Bully
+- Comunicação RPC
+- Detecção de falhas baseada em heartbeat
 """
 from __future__ import annotations
 
@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 class DistributedNode:
     """
-    Main distributed node manager.
+    Gerenciador principal do nó distribuído.
 
-    Integrates all distributed systems algorithms and provides
-    high-level interface for the application layer.
+    Integra todos os algoritmos de sistemas distribuídos e fornece
+    interface de alto nível para a camada de aplicação.
     """
 
     def __init__(
@@ -38,28 +38,25 @@ class DistributedNode:
         on_task_assigned: Callable[[str, bytes], asyncio.Future] | None = None,
     ):
         """
-        Initialize distributed node.
+        Inicializa o nó distribuído.
 
         Args:
-            node_id: Unique identifier for this node (1, 2, 3)
-            node_addresses: Mapping of node_id -> "host:grpc_port" (e.g., "node1:50051")
-            on_task_assigned: Callback when task is assigned to this node
+            node_id: Identificador único deste nó (1, 2, 3)
+            node_addresses: Mapeamento de node_id -> "host:grpc_port" (ex: "node1:50051")
+            on_task_assigned: Callback quando tarefa é atribuída a este nó
         """
         self.node_id = node_id
         self.node_addresses = node_addresses
         self.all_node_ids = list(node_addresses.keys())
         self.on_task_assigned = on_task_assigned
-        self.on_task_assigned_tensorflow = None  # Callback for TensorFlow tasks
-        self.grpc_server = None  # Will hold gRPC server instance
+        self.on_task_assigned_tensorflow = None
+        self.grpc_server = None
 
-        # Initialize components
         self.clock = LamportClock()
 
-        # Initialize gRPC client (exclusive communication method)
         logger.info(f"Node {node_id}: Using gRPC for inter-node communication")
         self.rpc_client = GRPCClient(node_id, node_addresses)
 
-        # Initialize Bully election
         self.election = BullyElection(
             node_id=node_id,
             all_node_ids=self.all_node_ids,
@@ -67,7 +64,6 @@ class DistributedNode:
             on_leader_change=self._on_leader_change
         )
 
-        # Initialize heartbeat monitor
         self.heartbeat = HeartbeatMonitor(
             node_id=node_id,
             all_node_ids=self.all_node_ids,
@@ -77,7 +73,6 @@ class DistributedNode:
             on_leader_failed=self._on_leader_failed
         )
 
-        # Task distributor
         self.task_distributor = TaskDistributor(
             node_id=node_id,
             is_leader_callback=lambda: self.is_leader,
@@ -85,7 +80,6 @@ class DistributedNode:
             assign_task_rpc=self._assign_task_via_rpc
         )
 
-        # State
         self.running = False
         self.tasks_processed = 0
         self.tasks_queue: asyncio.Queue = asyncio.Queue()
@@ -96,16 +90,16 @@ class DistributedNode:
 
     @property
     def is_leader(self) -> bool:
-        """Check if this node is the current leader."""
+        """Verifica se este nó é o líder atual."""
         return self.election.is_leader
 
     @property
     def leader_id(self) -> int | None:
-        """Get current leader ID."""
+        """Retorna o ID do líder atual."""
         return self.election.leader_id
 
     async def start(self) -> None:
-        """Start the distributed node."""
+        """Inicia o nó distribuído."""
         if self.running:
             logger.warning(f"Node {self.node_id}: Already running")
             return
@@ -113,23 +107,18 @@ class DistributedNode:
         self.running = True
         logger.info(f"Node {self.node_id}: Starting distributed node...")
 
-        # Start gRPC server
         from .grpc_server import serve_grpc
         grpc_port = int(os.getenv("GRPC_PORT", "50051"))
         self.grpc_server = await serve_grpc(self, port=grpc_port)
         logger.info(f"Node {self.node_id}: gRPC server started on port {grpc_port}")
 
-        # Start heartbeat monitoring
         await self.heartbeat.start()
 
-        # Wait a bit for heartbeats to stabilize
         await asyncio.sleep(1.0)
 
-        # Start election to determine leader
         logger.info(f"Node {self.node_id}: Starting initial leader election...")
         await self.election.start_election()
 
-        # Start task processing loop (if needed)
         asyncio.create_task(self._process_tasks())
 
         logger.info(
@@ -138,13 +127,12 @@ class DistributedNode:
         )
 
     async def stop(self) -> None:
-        """Stop the distributed node."""
+        """Para o nó distribuído."""
         logger.info(f"Node {self.node_id}: Stopping...")
         self.running = False
         await self.heartbeat.stop()
         await self.rpc_client.close()
 
-        # Stop gRPC server if running
         if self.grpc_server:
             logger.info(f"Node {self.node_id}: Stopping gRPC server...")
             await self.grpc_server.stop(grace=2.0)
@@ -158,17 +146,17 @@ class DistributedNode:
         image_bytes: bytes
     ) -> dict[str, Any]:
         """
-        Submit image analysis task to distributed system (PyTorch).
+        Submete tarefa de análise de imagem ao sistema distribuído (PyTorch).
 
-        Leader distributes to least-loaded node.
-        Follower processes locally.
+        Líder distribui para o nó menos carregado.
+        Seguidor processa localmente.
 
         Args:
-            task_id: Unique task identifier
-            image_bytes: Image data
+            task_id: Identificador único da tarefa
+            image_bytes: Dados da imagem
 
-        Returns:
-            Assignment info dict
+        Retorna:
+            Dict com informações da atribuição
         """
         return await self.task_distributor.submit_task(
             task_id=task_id,
@@ -182,17 +170,17 @@ class DistributedNode:
         image_bytes: bytes
     ) -> dict[str, Any]:
         """
-        Submit image analysis task to distributed system (TensorFlow).
+        Submete tarefa de análise de imagem ao sistema distribuído (TensorFlow).
 
-        Leader distributes to least-loaded node.
-        Follower processes locally.
+        Líder distribui para o nó menos carregado.
+        Seguidor processa localmente.
 
         Args:
-            task_id: Unique task identifier
-            image_bytes: Image data
+            task_id: Identificador único da tarefa
+            image_bytes: Dados da imagem
 
-        Returns:
-            Assignment info dict
+        Retorna:
+            Dict com informações da atribuição
         """
         return await self.task_distributor.submit_task(
             task_id=task_id,
@@ -207,7 +195,7 @@ class DistributedNode:
         task_type: str,
         payload: bytes
     ) -> dict[str, Any] | None:
-        """Assign task to another node via RPC."""
+        """Atribui tarefa a outro nó via RPC."""
         timestamp = self.clock.send_event()
         return await self.rpc_client.assign_task(
             target_node_id,
@@ -218,7 +206,7 @@ class DistributedNode:
         )
 
     def get_status(self) -> dict[str, Any]:
-        """Get current node status."""
+        """Retorna o status atual do nó."""
         alive_nodes = self.heartbeat.get_alive_nodes()
         health_summary = self.heartbeat.get_health_summary()
         load_summary = self.task_distributor.get_load_summary()
@@ -236,13 +224,9 @@ class DistributedNode:
             "load_summary": load_summary
         }
 
-    # RPC message handlers (called by RPC server)
-
     async def handle_election_message(self, msg: ElectionMessage) -> None:
-        """Handle incoming election message."""
-        # Update Lamport clock
+        """Processa mensagem de eleição recebida."""
         self.clock.receive_event(msg.timestamp)
-        # Pass to election module
         await self.election.handle_message(msg)
 
     async def handle_task_assignment(
@@ -252,20 +236,19 @@ class DistributedNode:
         payload: bytes
     ) -> dict[str, Any]:
         """
-        Handle task assignment from leader.
+        Processa atribuição de tarefa do líder.
 
         Args:
-            task_id: Unique task identifier
-            task_type: Type of task
-            payload: Task data
+            task_id: Identificador único da tarefa
+            task_type: Tipo da tarefa
+            payload: Dados da tarefa
 
-        Returns:
-            Acknowledgement dict
+        Retorna:
+            Dict de confirmação
         """
         logger.info(f"Node {self.node_id}: Received task assignment {task_id}")
 
         try:
-            # Add to processing queue
             await self.tasks_queue.put((task_id, task_type, payload))
 
             return {
@@ -281,14 +264,12 @@ class DistributedNode:
                 "message": str(e)
             }
 
-    # Internal methods
-
     async def _send_election_message(
         self,
         target_node_id: int,
         msg: ElectionMessage
     ) -> None:
-        """Send election message via RPC."""
+        """Envia mensagem de eleição via RPC."""
         msg.timestamp = self.clock.send_event()
         await self.rpc_client.send_election_message(
             target_node_id,
@@ -297,7 +278,7 @@ class DistributedNode:
         )
 
     async def _ping_node(self, target_node_id: int) -> bool:
-        """Ping another node (used by heartbeat monitor)."""
+        """Envia ping para outro nó (usado pelo monitor de heartbeat)."""
         timestamp = self.clock.send_event()
         response = await self.rpc_client.ping(target_node_id, timestamp)
 
@@ -307,31 +288,29 @@ class DistributedNode:
         return False
 
     def _on_leader_change(self, new_leader_id: int) -> None:
-        """Callback when leader changes."""
+        """Callback quando o líder muda."""
         logger.info(f"Node {self.node_id}: Leader changed to {new_leader_id}")
         self.heartbeat.set_leader(new_leader_id)
 
     def _on_node_failed(self, failed_node_id: int) -> None:
-        """Callback when a node fails."""
+        """Callback quando um nó falha."""
         logger.warning(f"Node {self.node_id}: Node {failed_node_id} declared failed")
-        # Could trigger task reassignment, etc.
 
     def _on_node_recovered(self, recovered_node_id: int) -> None:
-        """Callback when a failed node recovers."""
+        """Callback quando um nó falho se recupera."""
         logger.info(f"Node {self.node_id}: Node {recovered_node_id} recovered")
 
     async def _on_leader_failed(self) -> None:
-        """Callback when leader fails - trigger new election."""
+        """Callback quando o líder falha - inicia nova eleição."""
         logger.critical(f"Node {self.node_id}: Leader failed! Starting new election...")
         await self.election.start_election()
 
     async def _process_tasks(self) -> None:
-        """Background task processing loop."""
+        """Loop de processamento de tarefas em background."""
         logger.info(f"Node {self.node_id}: Task processing loop started")
 
         while self.running:
             try:
-                # Get task from distributor queue
                 task_data = await self.task_distributor.get_next_task()
 
                 if task_data is None:
@@ -364,23 +343,21 @@ class DistributedNode:
                 await asyncio.sleep(0.5)
 
 
-# Utility function to create node from environment
 def create_node_from_env() -> DistributedNode:
     """
-    Create DistributedNode from environment variables.
+    Cria DistributedNode a partir de variáveis de ambiente.
 
-    Expected env vars:
-    - NODE_ID: This node's ID (1, 2, or 3)
-    - NODE_1_ADDRESS: Address of node 1 (e.g., "node1:50051")
-    - NODE_2_ADDRESS: Address of node 2
-    - NODE_3_ADDRESS: Address of node 3
-    - GRPC_PORT: gRPC port to listen on (default: 50051)
+    Variáveis esperadas:
+    - NODE_ID: ID deste nó (1, 2 ou 3)
+    - NODE_1_ADDRESS: Endereço do nó 1 (ex: "node1:50051")
+    - NODE_2_ADDRESS: Endereço do nó 2
+    - NODE_3_ADDRESS: Endereço do nó 3
+    - GRPC_PORT: Porta gRPC para escutar (padrão: 50051)
 
-    Note: gRPC is now the exclusive communication method for inter-node communication.
+    Nota: gRPC é o método exclusivo de comunicação entre nós.
     """
     node_id = int(os.getenv("NODE_ID", "1"))
 
-    # Node addresses for gRPC
     node_addresses = {
         1: os.getenv("NODE_1_ADDRESS", "node1:50051"),
         2: os.getenv("NODE_2_ADDRESS", "node2:50051"),

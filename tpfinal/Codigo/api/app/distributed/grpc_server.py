@@ -1,7 +1,7 @@
 """
-gRPC Server implementation for distributed node communication.
+Implementação do servidor gRPC para comunicação entre nós distribuídos.
 
-Implements the NodeService defined in node.proto.
+Implementa o NodeService definido em node.proto.
 """
 from __future__ import annotations
 
@@ -21,16 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 class NodeServiceServicer(node_pb2_grpc.NodeServiceServicer):
-    """
-    gRPC service implementation for inter-node communication.
-    """
+    """Implementação do serviço gRPC para comunicação entre nós."""
 
     def __init__(self, distributed_node: DistributedNode):
         """
-        Initialize gRPC servicer.
+        Inicializa o servicer gRPC.
 
         Args:
-            distributed_node: Reference to the distributed node manager
+            distributed_node: Referência ao gerenciador de nó distribuído
         """
         self.node = distributed_node
         logger.info(f"gRPC servicer initialized for node {distributed_node.node_id}")
@@ -40,23 +38,13 @@ class NodeServiceServicer(node_pb2_grpc.NodeServiceServicer):
         request: node_pb2.PingRequest,
         context: grpc.aio.ServicerContext
     ) -> node_pb2.PingResponse:
-        """
-        Handle ping/heartbeat RPC.
-
-        Args:
-            request: Ping request with sender_id and timestamp
-            context: gRPC context
-
-        Returns:
-            Ping response with node status
-        """
+        """Processa RPC de ping/heartbeat."""
         try:
             sender_id = request.sender_id
             timestamp = request.timestamp
 
             logger.debug(f"Node {self.node.node_id}: Received gRPC ping from node {sender_id}")
 
-            # Update Lamport clock
             self.node.clock.receive_event(timestamp)
 
             return node_pb2.PingResponse(
@@ -74,16 +62,7 @@ class NodeServiceServicer(node_pb2_grpc.NodeServiceServicer):
         request: node_pb2.ElectionRequest,
         context: grpc.aio.ServicerContext
     ) -> node_pb2.ElectionResponse:
-        """
-        Handle election message RPC (Bully algorithm).
-
-        Args:
-            request: Election request with sender_id, message_type, timestamp
-            context: gRPC context
-
-        Returns:
-            Election response acknowledging the message
-        """
+        """Processa RPC de mensagem de eleição (algoritmo Bully)."""
         try:
             sender_id = request.sender_id
             message_type = request.message_type
@@ -93,7 +72,6 @@ class NodeServiceServicer(node_pb2_grpc.NodeServiceServicer):
                 f"Node {self.node.node_id}: Received gRPC {message_type} from node {sender_id}"
             )
 
-            # Create ElectionMessage and delegate to node manager
             from .election import ElectionMessage
             msg = ElectionMessage(
                 sender_id=sender_id,
@@ -116,20 +94,11 @@ class NodeServiceServicer(node_pb2_grpc.NodeServiceServicer):
         request: node_pb2.TaskAssignment,
         context: grpc.aio.ServicerContext
     ) -> node_pb2.TaskAcknowledgement:
-        """
-        Handle task assignment RPC.
-
-        Args:
-            request: Task assignment with task_id, task_type, payload, etc.
-            context: gRPC context
-
-        Returns:
-            Task acknowledgement
-        """
+        """Processa RPC de atribuição de tarefa."""
         try:
             task_id = request.task_id
             task_type = request.task_type
-            payload = request.payload  # bytes
+            payload = request.payload
             timestamp = request.timestamp
             assigned_by = request.assigned_by
 
@@ -137,12 +106,9 @@ class NodeServiceServicer(node_pb2_grpc.NodeServiceServicer):
                 f"Node {self.node.node_id}: Received gRPC task {task_id} from node {assigned_by}"
             )
 
-            # Update Lamport clock
             self.node.clock.receive_event(timestamp)
 
-            # Process task based on type
             if task_type == "analyze_image" and self.node.on_task_assigned:
-                # Schedule task processing
                 asyncio.create_task(self.node.on_task_assigned(task_id, payload))
 
                 return node_pb2.TaskAcknowledgement(
@@ -166,16 +132,7 @@ class NodeServiceServicer(node_pb2_grpc.NodeServiceServicer):
         request: node_pb2.StatusRequest,
         context: grpc.aio.ServicerContext
     ) -> node_pb2.StatusResponse:
-        """
-        Handle status query RPC.
-
-        Args:
-            request: Status request with sender_id
-            context: gRPC context
-
-        Returns:
-            Status response with comprehensive node information
-        """
+        """Processa RPC de consulta de status."""
         try:
             sender_id = request.sender_id
             logger.debug(f"Node {self.node.node_id}: Received gRPC status query from node {sender_id}")
@@ -199,14 +156,14 @@ class NodeServiceServicer(node_pb2_grpc.NodeServiceServicer):
 
 async def serve_grpc(distributed_node: DistributedNode, port: int = 50051) -> grpc.aio.Server:
     """
-    Start gRPC server for inter-node communication.
+    Inicia o servidor gRPC para comunicação entre nós.
 
     Args:
-        distributed_node: The distributed node manager instance
-        port: gRPC port to listen on (default: 50051)
+        distributed_node: Instância do gerenciador de nó distribuído
+        port: Porta gRPC para escutar (padrão: 50051)
 
-    Returns:
-        Running gRPC server
+    Retorna:
+        Servidor gRPC em execução
     """
     server = grpc.aio.server()
     node_pb2_grpc.add_NodeServiceServicer_to_server(

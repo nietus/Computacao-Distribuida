@@ -1,8 +1,8 @@
 """
-Bully Election Algorithm Implementation.
+Implementação do Algoritmo de Eleição Bully.
 
-Implements the Bully algorithm for leader election in distributed systems.
-Reference: Garcia-Molina, H. (1982). "Elections in a Distributed Computing System"
+Implementa o algoritmo Bully para eleição de líder em sistemas distribuídos.
+Referência: Garcia-Molina, H. (1982). "Elections in a Distributed Computing System"
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class NodeState(Enum):
-    """Node participation state in election."""
+    """Estado de participação do nó na eleição."""
     PARTICIPANT = "participant"
     LEADER = "leader"
     FOLLOWER = "follower"
@@ -24,7 +24,7 @@ class NodeState(Enum):
 
 @dataclass
 class ElectionMessage:
-    """Message used in Bully algorithm."""
+    """Mensagem usada no algoritmo Bully."""
     sender_id: int
     message_type: str  # "ELECTION", "OK", "COORDINATOR"
     timestamp: int
@@ -32,19 +32,19 @@ class ElectionMessage:
 
 class BullyElection:
     """
-    Bully Election Algorithm implementation.
+    Implementação do algoritmo de eleição Bully.
 
-    Algorithm:
-    1. When a node detects leader failure, it starts an election
-    2. Node sends ELECTION message to all nodes with higher ID
-    3. If no response (OK) within timeout, node becomes leader
-    4. If receives OK, waits for COORDINATOR message
-    5. Node with highest ID wins and broadcasts COORDINATOR message
+    Algoritmo:
+    1. Quando um nó detecta falha do líder, inicia uma eleição
+    2. Nó envia mensagem ELECTION para todos os nós com ID maior
+    3. Se não houver resposta (OK) dentro do timeout, nó se torna líder
+    4. Se receber OK, aguarda mensagem COORDINATOR
+    5. Nó com maior ID vence e transmite mensagem COORDINATOR
 
-    Properties:
-    - Ensures eventual leader election
-    - Higher ID always wins
-    - Handles concurrent elections
+    Propriedades:
+    - Garante eleição eventual de líder
+    - ID maior sempre vence
+    - Trata eleições concorrentes
     """
 
     def __init__(
@@ -55,13 +55,13 @@ class BullyElection:
         on_leader_change: Callable[[int], None] | None = None,
     ):
         """
-        Initialize Bully election manager.
+        Inicializa o gerenciador de eleição Bully.
 
         Args:
-            node_id: This node's unique identifier
-            all_node_ids: List of all node IDs in cluster
-            send_message_callback: Async function to send message to another node
-            on_leader_change: Callback when new leader is elected
+            node_id: Identificador único deste nó
+            all_node_ids: Lista de todos os IDs de nós no cluster
+            send_message_callback: Função assíncrona para enviar mensagem a outro nó
+            on_leader_change: Callback quando novo líder é eleito
         """
         self.node_id = node_id
         self.all_node_ids = sorted(all_node_ids)
@@ -75,7 +75,6 @@ class BullyElection:
 
         self._lock = asyncio.Lock()
 
-        # Timeouts (in seconds)
         self.election_timeout = 3.0
         self.coordinator_timeout = 5.0
 
@@ -83,27 +82,27 @@ class BullyElection:
 
     @property
     def is_leader(self) -> bool:
-        """Check if this node is the current leader."""
+        """Verifica se este nó é o líder atual."""
         return self.state == NodeState.LEADER
 
     @property
     def leader_id(self) -> int | None:
-        """Get current leader ID."""
+        """Retorna o ID do líder atual."""
         return self.current_leader
 
     def get_higher_nodes(self) -> list[int]:
-        """Get list of nodes with higher ID than self."""
+        """Retorna lista de nós com ID maior que este."""
         return [nid for nid in self.all_node_ids if nid > self.node_id]
 
     async def start_election(self) -> None:
         """
-        Start election process (Bully algorithm).
+        Inicia o processo de eleição (algoritmo Bully).
 
-        Steps:
-        1. Send ELECTION to all higher-ID nodes
-        2. Wait for OK responses
-        3. If no OK received, become leader
-        4. If OK received, wait for COORDINATOR
+        Passos:
+        1. Envia ELECTION para todos os nós com ID maior
+        2. Aguarda respostas OK
+        3. Se nenhum OK recebido, torna-se líder
+        4. Se receber OK, aguarda COORDINATOR
         """
         async with self._lock:
             if self.election_in_progress:
@@ -119,21 +118,17 @@ class BullyElection:
         higher_nodes = self.get_higher_nodes()
 
         if not higher_nodes:
-            # No higher nodes, I am the leader!
             await self._become_leader()
             return
 
-        # Send ELECTION to all higher nodes
         election_msg = ElectionMessage(
             sender_id=self.node_id,
             message_type="ELECTION",
-            timestamp=0  # Will be set by Lamport clock in actual usage
+            timestamp=0
         )
 
-        # Send to all higher nodes concurrently
         tasks = [self.send_message(nid, election_msg) for nid in higher_nodes]
 
-        # Wait for responses with timeout
         try:
             await asyncio.wait_for(
                 asyncio.gather(*tasks, return_exceptions=True),
@@ -142,7 +137,6 @@ class BullyElection:
         except asyncio.TimeoutError:
             logger.warning(f"Node {self.node_id}: Election timeout")
 
-        # Wait for OK responses to arrive
         await asyncio.sleep(1.0)
 
         async with self._lock:
@@ -160,17 +154,15 @@ class BullyElection:
             return
 
         if not got_ok:
-            # No higher node responded, I win!
             await self._become_leader()
         else:
-            # Higher node will take over, wait for COORDINATOR message
             logger.info(f"Node {self.node_id}: Received OK, waiting for COORDINATOR")
             async with self._lock:
                 self.election_in_progress = False
             await self._wait_for_coordinator()
 
     async def _become_leader(self) -> None:
-        """Transition to leader state and broadcast COORDINATOR."""
+        """Transiciona para estado de líder e transmite COORDINATOR."""
         async with self._lock:
             if self.current_leader is not None and self.current_leader > self.node_id:
                 logger.info(
@@ -187,7 +179,6 @@ class BullyElection:
 
         logger.info(f"Node {self.node_id}: I AM THE NEW LEADER!")
 
-        # Broadcast COORDINATOR to all nodes
         coordinator_msg = ElectionMessage(
             sender_id=self.node_id,
             message_type="COORDINATOR",
@@ -205,11 +196,10 @@ class BullyElection:
             self.on_leader_change(self.node_id)
 
     async def _wait_for_coordinator(self) -> None:
-        """Wait for COORDINATOR message from new leader."""
+        """Aguarda mensagem COORDINATOR do novo líder."""
         try:
             await asyncio.sleep(self.coordinator_timeout)
 
-            # If still no leader after timeout, restart election
             if self.current_leader is None or self.current_leader == self.node_id:
                 logger.warning(f"Node {self.node_id}: No COORDINATOR received, restarting election")
                 async with self._lock:
@@ -220,13 +210,12 @@ class BullyElection:
 
     async def handle_election_message(self, msg: ElectionMessage) -> None:
         """
-        Handle incoming ELECTION message.
+        Processa mensagem ELECTION recebida.
 
-        Response: Send OK and start own election if necessary.
+        Resposta: Envia OK e inicia própria eleição se necessário.
         """
         logger.info(f"Node {self.node_id}: Received ELECTION from {msg.sender_id}")
 
-        # Always respond OK to lower-ID nodes
         ok_msg = ElectionMessage(
             sender_id=self.node_id,
             message_type="OK",
@@ -234,45 +223,40 @@ class BullyElection:
         )
         await self.send_message(msg.sender_id, ok_msg)
 
-        # Start own election if not already in progress
         if not self.election_in_progress and msg.sender_id < self.node_id:
             asyncio.create_task(self.start_election())
 
     async def handle_ok_message(self, msg: ElectionMessage) -> None:
-        """Handle incoming OK message."""
+        """Processa mensagem OK recebida."""
         logger.info(f"Node {self.node_id}: Received OK from {msg.sender_id}")
         self.received_ok = True
 
     async def handle_coordinator_message(self, msg: ElectionMessage) -> None:
-        """Handle incoming COORDINATOR message (new leader announcement)."""
-        # Only accept COORDINATOR from nodes with higher or equal ID
-        # A lower-ID node cannot be leader if we are alive!
+        """Processa mensagem COORDINATOR recebida (anúncio de novo líder)."""
         if msg.sender_id < self.node_id:
             logger.warning(
                 f"Node {self.node_id}: Rejecting COORDINATOR from lower node {msg.sender_id}, "
                 "I have higher ID so I should be leader"
             )
-            # Don't start election if one is already in progress
             async with self._lock:
                 if not self.election_in_progress:
-                    self.election_in_progress = False  # Reset to allow new election
+                    self.election_in_progress = False
             asyncio.create_task(self.start_election())
             return
 
-        # Accept the higher-ID node as leader
         logger.info(f"Node {self.node_id}: Accepting node {msg.sender_id} as new leader")
 
         async with self._lock:
             self.current_leader = msg.sender_id
             self.state = NodeState.FOLLOWER
             self.election_in_progress = False
-            self.received_ok = False  # Reset for next election
+            self.received_ok = False
 
         if self.on_leader_change:
             self.on_leader_change(msg.sender_id)
 
     async def handle_message(self, msg: ElectionMessage) -> None:
-        """Route incoming election messages to appropriate handler."""
+        """Roteia mensagens de eleição recebidas para o handler apropriado."""
         if msg.message_type == "ELECTION":
             await self.handle_election_message(msg)
         elif msg.message_type == "OK":
