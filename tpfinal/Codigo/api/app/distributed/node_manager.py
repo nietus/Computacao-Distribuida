@@ -303,6 +303,7 @@ class DistributedNode:
     async def _on_leader_failed(self) -> None:
         """Callback quando o líder falha - inicia nova eleição."""
         logger.critical(f"Node {self.node_id}: Leader failed! Starting new election...")
+        self.election.current_leader = None
         await self.election.start_election()
 
     async def _process_tasks(self) -> None:
