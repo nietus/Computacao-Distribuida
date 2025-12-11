@@ -147,6 +147,17 @@ class BullyElection:
 
         async with self._lock:
             got_ok = self.received_ok
+            already_has_higher_leader = (
+                self.current_leader is not None and
+                self.current_leader > self.node_id
+            )
+
+        if already_has_higher_leader:
+            logger.info(f"Node {self.node_id}: Higher node {self.current_leader} is already leader")
+            async with self._lock:
+                self.election_in_progress = False
+                self.state = NodeState.FOLLOWER
+            return
 
         if not got_ok:
             # No higher node responded, I win!
@@ -161,6 +172,15 @@ class BullyElection:
     async def _become_leader(self) -> None:
         """Transition to leader state and broadcast COORDINATOR."""
         async with self._lock:
+            if self.current_leader is not None and self.current_leader > self.node_id:
+                logger.info(
+                    f"Node {self.node_id}: Aborting leadership claim, "
+                    f"higher node {self.current_leader} is already leader"
+                )
+                self.state = NodeState.FOLLOWER
+                self.election_in_progress = False
+                return
+
             self.state = NodeState.LEADER
             self.current_leader = self.node_id
             self.election_in_progress = False
@@ -230,17 +250,23 @@ class BullyElection:
         if msg.sender_id < self.node_id:
             logger.warning(
                 f"Node {self.node_id}: Rejecting COORDINATOR from lower node {msg.sender_id}, "
-                "starting my own election"
+                "I have higher ID so I should be leader"
             )
+            # Don't start election if one is already in progress
+            async with self._lock:
+                if not self.election_in_progress:
+                    self.election_in_progress = False  # Reset to allow new election
             asyncio.create_task(self.start_election())
             return
 
-        logger.info(f"Node {self.node_id}: New leader is {msg.sender_id}")
+        # Accept the higher-ID node as leader
+        logger.info(f"Node {self.node_id}: Accepting node {msg.sender_id} as new leader")
 
         async with self._lock:
             self.current_leader = msg.sender_id
             self.state = NodeState.FOLLOWER
             self.election_in_progress = False
+            self.received_ok = False  # Reset for next election
 
         if self.on_leader_change:
             self.on_leader_change(msg.sender_id)

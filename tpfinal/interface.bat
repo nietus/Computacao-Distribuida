@@ -90,14 +90,14 @@ echo ============================================================
 echo.
 echo Submitting image to distributed system...
 echo.
-for /f "delims=" %%i in ('curl -s -X POST -F "file=@img/bcp8.jpg" http://localhost:80/v1/analyze 2^>nul') do set response=%%i
-echo Response: %response%
+curl -s -X POST -F "file=@img/bcp8.jpg" http://localhost:80/v1/analyze 2>nul > temp_resp.json
+type temp_resp.json
+echo.
 echo.
 echo Extracting request_id...
-for /f "tokens=2 delims=:," %%a in ('echo %response% ^| findstr /i "request_id"') do set reqid=%%~a
-set reqid=%reqid:"=%
-set reqid=%reqid: =%
+for /f "tokens=*" %%a in ('python -c "import json; print(json.load(open('temp_resp.json'))['request_id'])"') do set reqid=%%a
 echo Request ID: %reqid%
+del temp_resp.json 2>nul
 echo.
 echo Waiting 10 seconds for processing...
 timeout /t 10 /nobreak >nul
@@ -117,14 +117,14 @@ echo ============================================================
 echo.
 echo Submitting image to distributed system...
 echo.
-for /f "delims=" %%i in ('curl -s -X POST -F "file=@img/sebks23.jpg" http://localhost:80/v1/analyze 2^>nul') do set response=%%i
-echo Response: %response%
+curl -s -X POST -F "file=@img/sebks23.jpg" http://localhost:80/v1/analyze 2>nul > temp_resp.json
+type temp_resp.json
+echo.
 echo.
 echo Extracting request_id...
-for /f "tokens=2 delims=:," %%a in ('echo %response% ^| findstr /i "request_id"') do set reqid=%%~a
-set reqid=%reqid:"=%
-set reqid=%reqid: =%
+for /f "tokens=*" %%a in ('python -c "import json; print(json.load(open('temp_resp.json'))['request_id'])"') do set reqid=%%a
 echo Request ID: %reqid%
+del temp_resp.json 2>nul
 echo.
 echo Waiting 10 seconds for processing...
 timeout /t 10 /nobreak >nul

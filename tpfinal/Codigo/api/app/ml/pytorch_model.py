@@ -109,6 +109,15 @@ class PyTorchSkinClassifier:
         """Return expected image size (height, width)."""
         return self._image_size
 
+    @property
+    def model_metadata(self) -> dict[str, str | int | tuple[int, int]]:
+        """Return metadata about the model configuration."""
+        return {
+            "model_path": str(self._model_path),
+            "num_classes": len(self._class_names),
+            "image_size": self._image_size,
+        }
+
     def _preprocess(self, image_bytes: bytes) -> np.ndarray:
         """Transform image bytes into tensor ready for inference."""
         try:
